@@ -2,7 +2,9 @@ import h from 'virtual-dom/h';
 
 import inputAeneas from './input/aeneas';
 import outputAeneas from './output/aeneas';
-import { secondsToPixels } from '../utils/conversions';
+import {
+  secondsToPixels
+} from '../utils/conversions';
 import DragInteraction from '../interaction/DragInteraction';
 import ScrollTopHook from './render/ScrollTopHook';
 import timeformat from '../utils/timeformat';
@@ -10,6 +12,7 @@ import timeformat from '../utils/timeformat';
 class AnnotationList {
   constructor(playlist, annotations, controls = [], editable = false,
     linkEndpoints = false, isContinuousPlay = false) {
+    this.dragHandler = null;
     this.playlist = playlist;
     this.resizeHandlers = [];
     this.editable = editable;
@@ -44,8 +47,12 @@ class AnnotationList {
     });
   }
 
+  release() {
+    this.playlist.getEventEmitter().off('dragged', this.dragHandler);
+  }
+
   setupEE(ee) {
-    ee.on('dragged', (deltaTime, data) => {
+    this.dragHandler = (deltaTime, data) => {
       const annotationIndex = data.index;
       const annotations = this.annotations;
       const note = annotations[annotationIndex];
@@ -91,7 +98,9 @@ class AnnotationList {
       }
 
       this.playlist.drawRequest();
-    });
+      this.playlist.getEventEmitter().emit('annotationUpdate', note);
+    };
+    ee.on('dragged', this.dragHandler);
 
     ee.on('continuousplay', (val) => {
       this.playlist.isContinuousPlay = val;
@@ -108,7 +117,7 @@ class AnnotationList {
     return ee;
   }
 
-  export() {
+  export () {
     const output = this.annotations.map(a => outputAeneas(a));
     const dataStr = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(output))}`;
     const a = document.createElement('a');
@@ -122,10 +131,12 @@ class AnnotationList {
 
   renderResizeLeft(i) {
     const events = DragInteraction.getEvents();
-    const config = { attributes: {
-      style: 'position: absolute; height: 30px; width: 10px; top: 0; left: -2px',
-      draggable: true,
-    } };
+    const config = {
+      attributes: {
+        style: 'position: absolute; height: 30px; width: 10px; top: 0; left: -2px',
+        draggable: true,
+      }
+    };
     const handler = this.resizeHandlers[i * 2];
 
     events.forEach((event) => {
@@ -137,10 +148,12 @@ class AnnotationList {
 
   renderResizeRight(i) {
     const events = DragInteraction.getEvents();
-    const config = { attributes: {
-      style: 'position: absolute; height: 30px; width: 10px; top: 0; right: -2px',
-      draggable: true,
-    } };
+    const config = {
+      attributes: {
+        style: 'position: absolute; height: 30px; width: 10px; top: 0; right: -2px',
+        draggable: true,
+      }
+    };
     const handler = this.resizeHandlers[(i * 2) + 1];
 
     events.forEach((event) => {
@@ -170,8 +183,7 @@ class AnnotationList {
   }
 
   render() {
-    const boxes = h('div.annotations-boxes',
-      {
+    const boxes = h('div.annotations-boxes', {
         attributes: {
           style: 'height: 30px;',
         },
@@ -184,8 +196,7 @@ class AnnotationList {
         const left = Math.floor((note.start * pixPerSec) - pixOffset);
         const width = Math.ceil((note.end * pixPerSec) - (note.start * pixPerSec));
 
-        return h('div.annotation-box',
-          {
+        return h('div.annotation-box', {
             attributes: {
               style: `position: absolute; height: 30px; width: ${width}px; left: ${left}px`,
               'data-id': note.id,
@@ -193,8 +204,7 @@ class AnnotationList {
           },
           [
             this.renderResizeLeft(i),
-            h('span.id',
-              {
+            h('span.id', {
                 onclick: () => {
                   if (this.playlist.isContinuousPlay) {
                     this.playlist.ee.emit('play', this.annotations[i].start);
@@ -213,8 +223,7 @@ class AnnotationList {
       }),
     );
 
-    const boxesWrapper = h('div.annotations-boxes-wrapper',
-      {
+    const boxesWrapper = h('div.annotations-boxes-wrapper', {
         attributes: {
           style: 'overflow: hidden;',
         },
@@ -224,8 +233,7 @@ class AnnotationList {
       ],
     );
 
-    const text = h('div.annotations-text',
-      {
+    const text = h('div.annotations-text', {
         hook: new ScrollTopHook(),
       },
       this.annotations.map((note, i) => {

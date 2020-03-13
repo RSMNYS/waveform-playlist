@@ -5,7 +5,9 @@ import diff from 'virtual-dom/diff';
 import patch from 'virtual-dom/patch';
 import InlineWorker from 'inline-worker';
 
-import { pixelsToSeconds } from './utils/conversions';
+import {
+  pixelsToSeconds
+} from './utils/conversions';
 import LoaderFactory from './track/loader/LoaderFactory';
 import ScrollHook from './render/ScrollHook';
 import TimeScale from './TimeScale';
@@ -45,6 +47,10 @@ export default class {
     this.exportWorker = new InlineWorker(ExportWavWorkerFunction);
   }
 
+  getMediaRecorder() {
+    return this.mediaRecorder;
+  }
+
   // TODO extract into a plugin
   initRecorder(stream) {
     this.mediaRecorder = new window.MediaRecorder(stream);
@@ -67,7 +73,9 @@ export default class {
 
       // throttle peaks calculation
       if (!this.working) {
-        const recording = new Blob(this.chunks, { type: 'audio/ogg; codecs=opus' });
+        const recording = new Blob(this.chunks, {
+          type: 'audio/ogg; codecs=opus'
+        });
         const loader = LoaderFactory.createLoader(recording, this.ac);
         loader.load().then((audioBuffer) => {
           // ask web worker for peaks.
@@ -95,6 +103,7 @@ export default class {
       this.recordingTrack.setPeaks(e.data);
       this.working = false;
       this.drawRequest();
+      this.ee.emit('audiosourcesrendered', this.tracks);
     };
   }
 
@@ -143,6 +152,9 @@ export default class {
   }
 
   setAnnotations(config) {
+    if (this.annotationList) {
+      this.annotationList.release();
+    }
     this.annotationList = new AnnotationList(
       this,
       config.annotations,
@@ -274,11 +286,15 @@ export default class {
 
     ee.on('newtrack', (file) => {
       this.load([{
-        src: file,
+        src: file.src,
         name: file.name,
       }]);
     });
-
+    ee.on('deleteTrack', (track) => {
+      this.deleteTrack(track);
+      this.adjustTrackPlayout();
+      this.drawRequest();
+    });
     ee.on('trim', () => {
       const track = this.getActiveTrack();
       const timeSelection = this.getTimeSelection();
@@ -286,6 +302,20 @@ export default class {
       track.trim(timeSelection.start, timeSelection.end);
       track.calculatePeaks(this.samplesPerPixel, this.sampleRate);
 
+      this.setTimeSelection(0, 0);
+      this.drawRequest();
+    });
+
+    ee.on('cut', () => {
+      const track = this.getActiveTrack();
+      const timeSelection = this.getTimeSelection();
+      const track2 = this.copyTrack(track);
+      this.tracks.push(track2);
+      track.trim(Math.max(0, track.getCueIn()), Math.min(timeSelection.start, track.getCueOut()));
+      track.calculatePeaks(this.samplesPerPixel, this.sampleRate);
+      track2.trim(Math.max(timeSelection.end, track2.getCueIn()), Math.min(track2.getEndTime(), track2.getCueOut()));
+      track2.calculatePeaks(this.samplesPerPixel, this.sampleRate);
+      this.ee.emit('audiosourcesrendered', this.tracks);
       this.setTimeSelection(0, 0);
       this.drawRequest();
     });
@@ -320,6 +350,44 @@ export default class {
     });
   }
 
+  deleteTrack(track) {
+    const index = this.tracks.indexOf(track);
+    this.tracks = this.tracks.filter((track, i) => {
+      if (i === index) {
+        track.scheduleStop();
+      }
+      return i !== index
+    });
+
+    this.adjustDuration();
+    this.draw(this.render());
+    this.ee.emit('audiosourcesrendered', this.tracks);
+  }
+
+  copyTrack(or) {
+    const track = new Track();
+    track.src = or.src;
+    track.setPlayout(new Playout(this.ac, or.playout.buffer));
+    track.setBuffer(or.buffer);
+    track.setName(or.name);
+    track.setEventEmitter(this.ee);
+    track.setEnabledStates(or.enabledStates);
+    track.setCues(or.cueIn, or.cueOut);
+    track.setCustomClass(or.customClass);
+    track.setWaveOutlineColor(or.waveOutlineColor);
+
+    track.setPeakData(or.peakData);
+
+    track.setState(this.getState());
+
+    track.gain = or.gain;
+    track.stereoPan = or.stereoPan;
+
+    // extract peaks with AudioContext for now.
+    track.calculatePeaks(this.samplesPerPixel, this.sampleRate);
+    return track;
+  }
+
   load(trackList) {
     const loadPromises = trackList.map((trackInfo) => {
       const loader = LoaderFactory.createLoader(trackInfo.src, this.ac, this.ee);
@@ -342,7 +410,10 @@ export default class {
         const muted = info.muted || false;
         const soloed = info.soloed || false;
         const selection = info.selected;
-        const peaks = info.peaks || { type: 'WebAudio', mono: this.mono };
+        const peaks = info.peaks || {
+          type: 'WebAudio',
+          mono: this.mono
+        };
         const customClass = info.customClass || undefined;
         const waveOutlineColor = info.waveOutlineColor || undefined;
         const stereoPan = info.stereoPan || 0;
@@ -402,7 +473,7 @@ export default class {
       this.adjustDuration();
       this.draw(this.render());
 
-      this.ee.emit('audiosourcesrendered');
+      this.ee.emit('audiosourcesrendered', this.tracks);
     });
   }
 
@@ -595,8 +666,8 @@ export default class {
   }
 
   /*
-  *   returns the current point of time in the playlist in seconds.
-  */
+   *   returns the current point of time in the playlist in seconds.
+   */
   getCurrentTime() {
     const cursorPos = this.lastSeeked || this.pausedAt || this.cursor;
 
@@ -761,13 +832,14 @@ export default class {
       if (this.getSeekStyle() === 'fill') {
         this.playbackSeconds = start;
       }
+      this.draw(this.render());
     }
   }
 
   /*
-  * Animation function for the playlist.
-  * Keep under 16.7 milliseconds based on a typical screen refresh rate of 60fps.
-  */
+   * Animation function for the playlist.
+   * Keep under 16.7 milliseconds based on a typical screen refresh rate of 60fps.
+   */
   updateEditor(cursor) {
     const currentTime = this.ac.currentTime;
     const selection = this.getTimeSelection();
@@ -870,8 +942,7 @@ export default class {
       })),
     );
 
-    return h('div.playlist-tracks',
-      {
+    return h('div.playlist-tracks', {
         attributes: {
           style: 'overflow: auto;',
         },
@@ -903,8 +974,7 @@ export default class {
       containerChildren.push(this.renderAnnotations());
     }
 
-    return h('div.playlist',
-      {
+    return h('div.playlist', {
         attributes: {
           style: 'overflow: hidden; position: relative;',
         },

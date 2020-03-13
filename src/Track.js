@@ -5,9 +5,15 @@ import uuid from 'uuid';
 import h from 'virtual-dom/h';
 
 import extractPeaks from 'webaudio-peaks';
-import { FADEIN, FADEOUT } from 'fade-maker';
+import {
+  FADEIN,
+  FADEOUT
+} from 'fade-maker';
 
-import { secondsToPixels, secondsToSamples } from './utils/conversions';
+import {
+  secondsToPixels,
+  secondsToSamples
+} from './utils/conversions';
 import stateClasses from './track/states';
 
 import CanvasHook from './render/CanvasHook';
@@ -53,9 +59,17 @@ export default class {
     this.waveOutlineColor = color;
   }
 
+  getCueIn() {
+    return this.cueIn;
+  }
+
+  getCueOut() {
+    return this.cueOut;
+  }
+
   setCues(cueIn, cueOut) {
     if (cueOut < cueIn) {
-      throw new Error('cue out cannot be less than cue in');
+      return;
     }
 
     this.cueIn = cueIn;
@@ -65,8 +79,8 @@ export default class {
   }
 
   /*
-  *   start, end in seconds relative to the entire playlist.
-  */
+   *   start, end in seconds relative to the entire playlist.
+   */
   trim(start, end) {
     const trackStart = this.getStartTime();
     const trackEnd = this.getEndTime();
@@ -361,41 +375,44 @@ export default class {
     const soloClass = data.soloed ? '.active' : '';
     const numChan = this.peaks.data.length;
 
-    return h('div.controls',
-      {
-        attributes: {
-          style: `height: ${numChan * data.height}px; width: ${data.controls.width}px; position: absolute; left: 0; z-index: 10;`,
-        },
-      }, [
-        h('header', [this.name]),
-        h('div.btn-group', [
-          h(`span.btn.btn-default.btn-xs.btn-mute${muteClass}`, {
-            onclick: () => {
-              this.ee.emit('mute', this);
-            },
-          }, ['Mute']),
-          h(`span.btn.btn-default.btn-xs.btn-solo${soloClass}`, {
-            onclick: () => {
-              this.ee.emit('solo', this);
-            },
-          }, ['Solo']),
-        ]),
-        h('label', [
-          h('input.volume-slider', {
-            attributes: {
-              type: 'range',
-              min: 0,
-              max: 100,
-              value: 100,
-            },
-            hook: new VolumeSliderHook(this.gain),
-            oninput: (e) => {
-              this.ee.emit('volumechange', e.target.value, this);
-            },
-          }),
-        ]),
-      ],
-    );
+    return h('div.controls', {
+      attributes: {
+        style: `height: ${numChan * data.height}px; width: ${data.controls.width}px; position: absolute; left: 0; z-index: 10;`,
+      },
+    }, [
+      h('header', [this.name]),
+      h('div.btn-group', [
+        h(`span.btn.btn-default.btn-xs.btn-mute${muteClass}`, {
+          onclick: () => {
+            this.ee.emit('mute', this);
+          },
+        }, ['Mute']),
+        h(`span.btn.btn-default.btn-xs.btn-solo${soloClass}`, {
+          onclick: () => {
+            this.ee.emit('solo', this);
+          },
+        }, ['Solo']),
+        h(`span.mbtn-gray-custom.btn.btn-default.btn-xs.btn-deleteTrack`, {
+          onclick: () => {
+            this.ee.emit('deleteTrack', this);
+          },
+        }, ['X']),
+      ]),
+      h('label', [
+        h('input.volume-slider', {
+          attributes: {
+            type: 'range',
+            min: 0,
+            max: 100,
+            value: 100,
+          },
+          hook: new VolumeSliderHook(this.gain),
+          oninput: (e) => {
+            this.ee.emit('volumechange', e.target.value, this);
+          },
+        }),
+      ]),
+    ], );
   }
 
   render(data) {
@@ -436,9 +453,9 @@ export default class {
 
       while (totalWidth > 0) {
         const currentWidth = Math.min(totalWidth, MAX_CANVAS_WIDTH);
-        const canvasColor = this.waveOutlineColor
-          ? this.waveOutlineColor
-          : data.colors.waveOutlineColor;
+        const canvasColor = this.waveOutlineColor ?
+          this.waveOutlineColor :
+          data.colors.waveOutlineColor;
 
         channelChildren.push(h('canvas', {
           attributes: {
@@ -462,28 +479,24 @@ export default class {
           data.sampleRate,
         );
 
-        channelChildren.push(h('div.wp-fade.wp-fadein',
-          {
+        channelChildren.push(h('div.wp-fade.wp-fadein', {
+          attributes: {
+            style: `position: absolute; height: ${data.height}px; width: ${fadeWidth}px; top: 0; left: 0; z-index: 4;`,
+          },
+        }, [
+          h('canvas', {
             attributes: {
-              style: `position: absolute; height: ${data.height}px; width: ${fadeWidth}px; top: 0; left: 0; z-index: 4;`,
+              width: fadeWidth,
+              height: data.height,
             },
-          }, [
-            h('canvas',
-              {
-                attributes: {
-                  width: fadeWidth,
-                  height: data.height,
-                },
-                hook: new FadeCanvasHook(
-                  fadeIn.type,
-                  fadeIn.shape,
-                  fadeIn.end - fadeIn.start,
-                  data.resolution,
-                ),
-              },
+            hook: new FadeCanvasHook(
+              fadeIn.type,
+              fadeIn.shape,
+              fadeIn.end - fadeIn.start,
+              data.resolution,
             ),
-          ],
-        ));
+          }, ),
+        ], ));
       }
 
       if (this.fadeOut) {
@@ -494,8 +507,7 @@ export default class {
           data.sampleRate,
         );
 
-        channelChildren.push(h('div.wp-fade.wp-fadeout',
-          {
+        channelChildren.push(h('div.wp-fade.wp-fadeout', {
             attributes: {
               style: `position: absolute; height: ${data.height}px; width: ${fadeWidth}px; top: 0; right: 0; z-index: 4;`,
             },
@@ -517,8 +529,7 @@ export default class {
         ));
       }
 
-      return h(`div.channel.channel-${channelNum}`,
-        {
+      return h(`div.channel.channel-${channelNum}`, {
           attributes: {
             style: `height: ${data.height}px; width: ${width}px; top: ${channelNum * data.height}px; left: ${startX}px; position: absolute; margin: 0; padding: 0; z-index: 1;`,
           },
@@ -544,8 +555,7 @@ export default class {
       }));
     }
 
-    const waveform = h('div.waveform',
-      {
+    const waveform = h('div.waveform', {
         attributes: {
           style: `height: ${numChan * data.height}px; position: relative;`,
         },
@@ -566,8 +576,7 @@ export default class {
     const audibleClass = data.shouldPlay ? '' : '.silent';
     const customClass = (this.customClass === undefined) ? '' : `.${this.customClass}`;
 
-    return h(`div.channel-wrapper${audibleClass}${customClass}`,
-      {
+    return h(`div.channel-wrapper${audibleClass}${customClass}`, {
         attributes: {
           style: `margin-left: ${channelMargin}px; height: ${data.height * numChan}px;`,
         },
